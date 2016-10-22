@@ -1,0 +1,261 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Monocultura</title>
+    <meta charset="utf-8">
+    <style>
+      body {
+        text-align: center;
+      }
+
+      main, main div {
+        display: inline-block;
+      }
+
+      main {
+        background: black;
+        border: 4px solid;
+        border-right: none;
+      }
+
+      p {
+        font-family: sans-serif;
+      }
+
+      .tile.X img, .tile.O img {
+        height: inherit;
+        width: inherit;
+      }
+
+      .inactive {
+        background-color: white !important;
+      }
+
+      .grid.X {
+        background: url(http://www.clipartkid.com/images/47/coffee-bean-clipart-cliparts-co-A4NklA-clipart.png) 0 -4px;
+      }
+
+      .grid.O {
+        background: url(http://www.clipartbest.com/cliparts/di7/oMo/di7oMog5T.png) 0 -4px;
+      }
+
+      .grid.X, .grid.O {
+        background-size: 100%;
+      }
+
+      .tile {
+        height: 65px;
+        width: 65px;
+      }
+
+      .tile:hover {
+        outline: solid;
+      }
+    </style>
+    <script src="http://cdn.socket.io/socket.io-1.2.0.js"></script>
+    <script src="http://code.jquery.com/jquery-1.11.1.js"></script>
+    <script>
+      console.clear();
+      var socket = io();
+      var me, myTurn;
+      setTimeout(function() {
+        me = socket.io.engine.id;
+        $('p').text('Seu código é ' + me);
+      }, 0);
+
+      function isItMyTurn() {
+        $('p').text(myTurn ? 'É a sua vez' : 'É a vez do seu oponente');
+      }
+
+      function makeMark(mark, grid, tile) {
+        if (mark == 'X') var url = 'http://www.clipartkid.com/images/47/coffee-bean-clipart-cliparts-co-A4NklA-clipart.png';
+        else var url = 'http://www.clipartbest.com/cliparts/di7/oMo/di7oMog5T.png';
+        $('.grid.' + grid + ' .tile.' + tile).addClass(mark).html('<img src="' +url+ '"</img>');
+        isItMyTurn();
+      }
+
+      function mark(mark, grid, tile) {
+        var info = [];
+        for (var i in arguments) info.push(arguments[i]);
+
+        socket.emit('mark', info);
+        makeMark.apply(null, info);
+      }
+
+      function challenge() {
+        socket.emit('challenge', $('select').val());
+        alert('Desafio enviado, aguardando resposta...');
+      }
+
+      socket.on('challenged', function(challenger) {
+        if (confirm('Você foi desafiado por ' + challenger + '. Aceitar?')) {
+          socket.emit('challenge accepted', challenger);
+        }
+      });
+
+      var allSockets = [];
+      socket.on('allSockets update', function(list) {
+        $('select').html('');
+
+        allSockets = list;
+        for (var i in allSockets) {
+          if (allSockets[i] != me) {
+            $('select').append('<option>' + allSockets[i] + '</option>');
+          }
+        }
+      });
+
+      socket.on('game start', function(game) {
+        socket.emit('game start', game);
+        alert('Desafio aceito! Iniciando a partida...');
+
+        var players = game.split(' VS ');
+        myTurn = players[0] == me;
+
+        var myMark = myTurn ? 'X' : 'O';
+        var opponentMark = myTurn ? 'O' : 'X';
+
+        if (!myTurn) $('.grid').addClass('inactive');
+        isItMyTurn();
+
+        $('select, button').hide();
+        $('.tile').removeClass('X O').html('');
+        $('main').show();
+
+        $.fn.extend({
+          checkCompletion: function(mark) {
+            if (!mark) return this.checkCompletion('X') || this.checkCompletion('O');
+            if ($(this).hasClass(mark)) return true;
+
+            var m = [];
+
+            this.children('div').each(function() {
+              m.push($(this).hasClass(mark));
+            });
+
+            if (
+              (m[0] && m[1] && m[2]) ||
+              (m[3] && m[4] && m[5]) ||
+              (m[6] && m[7] && m[8]) ||
+              (m[0] && m[3] && m[6]) ||
+              (m[1] && m[4] && m[7]) ||
+              (m[2] && m[5] && m[8]) ||
+              (m[0] && m[4] && m[8]) ||
+              (m[2] && m[4] && m[6])
+            ) {
+
+              if (this.prop('tagName') == 'MAIN') {
+                this.children('.grid').addClass('inactive');
+                this.find('div').removeClass('X O');
+
+                if (mark == 'X') var url = 'http://www.clipartkid.com/images/47/coffee-bean-clipart-cliparts-co-A4NklA-clipart.png';
+                else var url = 'http://www.clipartbest.com/cliparts/di7/oMo/di7oMog5T.png';
+
+                this.find('.tile').addClass(mark).html('<img src="' +url+ '"</img>');
+              } else this.children('div').html('');
+
+              this.addClass(mark);
+              return true;
+            } else return false;
+          }
+        });
+
+        socket.on('mark', function(info) {
+          //Procedure for when my opponent makes a mark; it's now my turn
+
+          myTurn = true;
+          makeMark.apply(null, info);
+
+          $('.grid.' + info[1]).checkCompletion();
+
+          var activeGrid = $('.grid.' + info[2]);
+          if (activeGrid.checkCompletion()) activeGrid = $('.grid').not('.X, .O');
+
+          $('.grid').addClass('inactive');
+          activeGrid.removeClass('inactive');
+
+          if ($('main').checkCompletion()) {
+            $('p').text('Perdeu! Seu oponente conseguiu a monocultura')
+          }
+        });
+
+        $('.tile').click(function() {
+          var parent = $(this).parent();
+
+          var isEmpty = !$(this).hasClass('X') &&
+                        !$(this).hasClass('O');
+
+          var grid =  parent.attr('class')
+                      .split(' ')[1];
+
+          var tile =  $(this).attr('class')
+                      .split(' ')[1];
+
+          if (myTurn && isEmpty && !parent.hasClass('inactive')) {
+            //Procedure for when I make a mark; it's now my opponent's turn
+
+            myTurn = false;
+            mark(myMark, grid, tile);
+
+            $('.grid.' + grid).checkCompletion();
+
+            var activeGrid = $('.grid.' + tile);
+            if (activeGrid.checkCompletion()) activeGrid = $('.grid').not('.X, .O');
+
+            $('.grid').addClass('inactive');
+            activeGrid.removeClass('inactive');
+          }
+
+          if ($('main').checkCompletion()) {
+            $('p').text('Ganhou! Você conseguiu a monocultura!')
+          }
+        });
+      });
+
+      $(document).ready(function() {
+        $('.grid').append([
+          '<div class="tile t-l"></div>&ensp;<div class="tile t-m"></div>&ensp;<div class="tile t-r"></div><br>',
+          '<div class="tile m-l"></div>&ensp;<div class="tile m-m"></div>&ensp;<div class="tile m-r"></div><br>',
+          '<div class="tile b-l"></div>&ensp;<div class="tile b-m"></div>&ensp;<div class="tile b-r"></div><br>'
+        ]);
+      });
+    </script>
+  </head>
+  <body>
+    <p></p>
+    <select></select>
+    <button onclick=challenge()>Desafiar</button>
+    <main style="display: none">
+      <div class='grid t-l' style="background-color: #ff0000">
+      </div>
+      &ensp;
+      <div class='grid t-m' style="background-color: #ff8000">
+      </div>
+      &ensp;
+      <div class='grid t-r' style="background-color: #ff0080">
+      </div>
+
+      <br><br>
+
+      <div class='grid m-l' style="background-color: #80ff00">
+      </div>
+      &ensp;
+      <div class='grid m-m' style="background-color: #00ff00">
+      </div>
+      &ensp;
+      <div class='grid m-r' style="background-color: #00ff80">
+      </div>
+
+      <br><br>
+
+      <div class='grid b-l' style="background-color: #8000ff">
+      </div>
+      &ensp;
+      <div class='grid b-m' style="background-color: #0080ff">
+      </div>
+      &ensp;
+      <div class='grid b-r' style="background-color: #0000ff">
+      </div>
+    </main>
+  </body>
+</html>
